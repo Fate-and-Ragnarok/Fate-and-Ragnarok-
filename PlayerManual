@@ -1,0 +1,1458 @@
+import React, { useState, useEffect, createContext, useContext, useRef, useCallback } from 'react';
+import { Sun, Moon, ArrowLeft, Swords, Shield, Heart, ScrollText, Gem, Sparkles, Book, Info, Ruler, Zap, Library, Layers, List, Package } from 'lucide-react'; // Importing icons
+
+// Theme Context for managing dark/light mode
+const ThemeContext = createContext();
+
+const ThemeProvider = ({ children }) => {
+    const [theme, setTheme] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const savedTheme = localStorage.getItem('theme');
+            return savedTheme ? savedTheme : 'dark';
+        }
+        return 'dark';
+    });
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            document.documentElement.classList.remove('light', 'dark');
+            document.documentElement.classList.add(theme);
+            localStorage.setItem('theme', theme);
+        }
+    }, [theme]);
+
+    const toggleTheme = () => {
+        setTheme((prevTheme) => (prevTheme === 'dark' ? 'light' : 'dark'));
+    };
+
+    return (
+        <ThemeContext.Provider value={{ theme, toggleTheme }}>
+            {children}
+        </ThemeContext.Provider>
+    );
+};
+
+const useTheme = () => useContext(ThemeContext);
+
+// Global Glossary Terms
+const glossaryTerms = {
+    "HP": "Health Points. Lose them, you're eliminated.",
+    "Rune Check": "Rolling the Rune Dice for an outcome.",
+    "Draw Pile": "Where you draw new cards.",
+    "Discard Pile": "Where discarded/played cards go.",
+    "Fate Marks": "Earned by Fate Watcher. 5 Marks = 1 Bonus Card 📜✨.",
+    "Bonus Card": "A standard card drawn from the main Draw Pile.",
+    "ATTACK": "A card action that typically causes a target to lose HP.",
+    "DEFENCE": "A card action used to block damage from an ATTACK.",
+    "HEAL": "A card action used to restore HP.",
+    "EVENT cards": "These create unique situations that affect players or the game state.",
+    "ITEM cards": "These are one-time use cards with special, immediate effects.",
+    "EQUIPMENT cards": "These are one-time use cards that give powerful attack boosts or special combat rules.",
+    "Fate Weaver ᚨ": "A secret identity with 5 HP; goal is to eliminate Thread Breakers or survive.",
+    "Hidden Order ᛉ": "A secret identity with 4 HP; goal is to help the Fate Weaver survive.",
+    "Thread Breaker ᛈ": "A secret identity with 4 HP; goal is to defeat the Fate Weaver, and at least one Thread Breaker must survive.",
+    "Ansuz": "The rune ᚨ, representing the Fate Weaver.",
+    "Algiz": "The rune ᛉ, representing the Hidden Order.",
+    "Pertho": "The rune ᛈ, representing the Thread Breaker.",
+    "Observation Period": "First game period; max 1 ATTACK, distance 1.",
+    "Revelation Period": "Second game period; max 2 ATTACKs (different targets), distance 2.",
+    "Ragnarök Period": "Final game period; max 2 ATTACKs (any targets), unlimited distance.",
+    "Rune Dice": "A special dice 🎲 with ᛋ, ᛃ, ᚺ symbols.",
+    "Sowilo": "The rune ᛋ, indicating a positive result.",
+    "Jera": "The rune ᛃ, indicating a neutral result.",
+    "Hagalaz": "The rune ᚺ, indicating a negative result.",
+    "Kenaz": "The rune for 'ATTACK and see' or 'DEFENCE and see' variants.",
+    "Tiwaz": "The rune for 'DEFENCE and hit' variant.",
+    "Dagaz": "The rune for 'HEAL and revive' variant."
+};
+
+// Tooltip component
+const Tooltip = ({ term, children }) => {
+    const { theme } = useTheme();
+    const [isVisible, setIsVisible] = useState(false);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const tooltipRef = useRef(null);
+
+    const handleMouseMove = useCallback((e) => {
+        setPosition({ x: e.clientX + 15, y: e.clientY + 15 }); // Offset tooltip from cursor
+    }, []);
+
+    useEffect(() => {
+        if (isVisible) {
+            document.addEventListener('mousemove', handleMouseMove);
+        } else {
+            document.removeEventListener('mousemove', handleMouseMove);
+        }
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+        };
+    }, [isVisible, handleMouseMove]);
+
+    const definition = glossaryTerms[term] || "Definition not found.";
+
+    return (
+        <span
+            className={`relative inline-block cursor-help font-semibold
+                ${theme === 'dark' ? 'text-indigo-300 hover:text-indigo-100' : 'text-indigo-700 hover:text-indigo-900'}
+                transition-colors duration-200 border-b border-dashed
+                ${theme === 'dark' ? 'border-indigo-500' : 'border-indigo-400'}`}
+            onMouseEnter={() => setIsVisible(true)}
+            onMouseLeave={() => setIsVisible(false)}
+        >
+            {children}
+            {isVisible && (
+                <div
+                    ref={tooltipRef}
+                    style={{ left: position.x, top: position.y }}
+                    className={`fixed z-50 p-3 rounded-lg shadow-xl max-w-xs text-sm transition-opacity duration-200
+                        ${theme === 'dark' ? 'bg-gray-700 text-gray-50 border border-gray-600' : 'bg-gray-50 text-gray-800 border border-gray-300'}`}
+                >
+                    <strong className={theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}>{term}:</strong> {definition}
+                </div>
+            )}
+        </span>
+    );
+};
+
+
+// Function to parse text and apply Tooltip to glossary terms
+const renderTextWithTooltips = (text) => {
+    const parts = [];
+    let lastIndex = 0;
+
+    // Sort terms by length in descending order to match longer terms first
+    const sortedTerms = Object.keys(glossaryTerms).sort((a, b) => b.length - a.length);
+
+    sortedTerms.forEach(term => {
+        const regex = new RegExp(`\\b(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})\\b`, 'gi');
+        let match;
+        while ((match = regex.exec(text)) !== null) {
+            if (match.index > lastIndex) {
+                parts.push(text.substring(lastIndex, match.index));
+            }
+            parts.push(
+                <Tooltip key={`${term}-${match.index}`} term={match[0]}>
+                    {match[0]}
+                </Tooltip>
+            );
+            lastIndex = regex.lastIndex;
+        }
+    });
+
+    if (lastIndex < text.length) {
+        parts.push(text.substring(lastIndex));
+    }
+
+    return parts.flat(); // Flatten the array in case of nested matches (though regex.exec will prevent most)
+};
+
+
+// Main navigation links for the entire app
+const mainNavLinks = [
+    { id: 'tutorial', title: 'Tutorial Setup', icon: Swords },
+    { id: 'standard', title: 'Standard Setup', icon: Shield },
+    { id: 'ultra', title: 'Ultra Setup', icon: Sparkles },
+    { id: 'character-cards', title: 'Character Cards', icon: Heart },
+    { id: 'cards-pedia', title: 'Cards Pedia', icon: Layers },
+    { id: 'glossary', title: 'Glossary & Quick Ref', icon: Book },
+];
+
+// Page Navigation Component (sticky sidebar/top)
+const PageNavigation = ({ sections, currentPageId, setCurrentPage }) => {
+    const { theme } = useTheme();
+    const [activeSection, setActiveSection] = useState('');
+    const observer = useRef(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false); // For mobile menu
+
+    const handleIntersection = useCallback((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && entry.intersectionRatio >= 0.5) { // At least 50% visible
+                setActiveSection(entry.target.id);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        observer.current = new IntersectionObserver(handleIntersection, {
+            root: null, // viewport
+            rootMargin: '0px',
+            threshold: 0.5, // Trigger when 50% of the item is visible
+        });
+
+        sections.forEach(section => {
+            const element = document.getElementById(section.id);
+            if (element) {
+                observer.current.observe(element);
+            }
+        });
+
+        // Set initial active section if none are intersecting (e.g., at top of page)
+        if (!activeSection && sections.length > 0) {
+            setActiveSection(sections[0].id);
+        }
+
+        return () => {
+            if (observer.current) {
+                observer.current.disconnect();
+            }
+        };
+    }, [sections, handleIntersection, activeSection]); // Include activeSection to re-evaluate if it changes externally
+
+    const scrollToSection = (id) => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+        setIsMenuOpen(false); // Close menu on mobile after selection
+    };
+
+    const navClasses = `sticky top-4 self-start rounded-xl p-4 shadow-lg z-10 transition-colors duration-500
+        ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'}`;
+    const linkClasses = (isActive) => `flex items-center gap-2 px-3 py-2 rounded-lg text-base font-medium transition-all duration-300
+        ${isActive
+            ? (theme === 'dark' ? 'bg-indigo-700 text-white shadow-md' : 'bg-indigo-500 text-white shadow-md')
+            : (theme === 'dark' ? 'text-gray-300 hover:bg-gray-700 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')
+        }`;
+
+    return (
+        <>
+            {/* Mobile menu toggle */}
+            <button
+                className={`md:hidden fixed bottom-4 right-4 p-3 rounded-full shadow-lg z-50 transition-all duration-300
+                    ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white' : 'bg-indigo-500 hover:bg-indigo-600 text-white'}`}
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                aria-label="Toggle navigation menu"
+            >
+                {isMenuOpen ? <ArrowLeft className="w-6 h-6" /> : <List className="w-6 h-6" />}
+            </button>
+
+            {/* Desktop menu */}
+            <nav className={`hidden md:block w-full md:w-64 flex-shrink-0 ${navClasses}`}>
+                <h4 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-700'}`}>Current Page Sections</h4>
+                <ul className="space-y-2 mb-6">
+                    {sections.map(section => (
+                        <li key={section.id}>
+                            <a
+                                href={`#${section.id}`}
+                                onClick={(e) => { e.preventDefault(); scrollToSection(section.id); }}
+                                className={linkClasses(activeSection === section.id)}
+                            >
+                                {section.icon && <section.icon className="w-5 h-5" />} {renderTextWithTooltips(section.title)}
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+
+                <h4 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-700'}`}>Other Pages</h4>
+                <ul className="space-y-2">
+                    {mainNavLinks.map(link => (
+                        <li key={link.id}>
+                            <button
+                                onClick={() => setCurrentPage(link.id)}
+                                className={linkClasses(currentPageId === link.id)}
+                            >
+                                {link.icon && <link.icon className="w-5 h-5" />} {link.title}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            </nav>
+
+            {/* Mobile overlay menu */}
+            {isMenuOpen && (
+                <div className={`md:hidden fixed inset-0 z-40 p-4 transition-transform duration-300 ease-out
+                    ${theme === 'dark' ? 'bg-gray-900 bg-opacity-95' : 'bg-white bg-opacity-95'} flex flex-col items-center justify-center`}>
+                    <button
+                        className={`absolute top-4 right-4 p-3 rounded-full shadow-lg z-50
+                            ${theme === 'dark' ? 'bg-indigo-600 text-white' : 'bg-indigo-500 text-white'}`}
+                        onClick={() => setIsMenuOpen(false)}
+                        aria-label="Close navigation menu"
+                    >
+                        <ArrowLeft className="w-6 h-6" />
+                    </button>
+                    <nav className={`w-full ${navClasses} static shadow-none`}> {/* Use static for mobile overlay */}
+                        <h4 className={`text-2xl font-bold mb-6 ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-700'}`}>Current Page Sections</h4>
+                        <ul className="space-y-4 mb-8">
+                            {sections.map(section => (
+                                <li key={section.id}>
+                                    <a
+                                        href={`#${section.id}`}
+                                        onClick={(e) => { e.preventDefault(); scrollToSection(section.id); }}
+                                        className={linkClasses(activeSection === section.id)}
+                                    >
+                                        {section.icon && <section.icon className="w-6 h-6" />} {renderTextWithTooltips(section.title)}
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+
+                        <h4 className={`text-2xl font-bold mb-6 ${theme === 'dark' ? 'text-indigo-400' : 'text-indigo-700'}`}>Other Pages</h4>
+                        <ul className="space-y-4">
+                            {mainNavLinks.map(link => (
+                                <li key={link.id}>
+                                    <button
+                                        onClick={() => setCurrentPage(link.id)}
+                                        className={linkClasses(currentPageId === link.id)}
+                                    >
+                                        {link.icon && <link.icon className="w-6 h-6" />} {link.title}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </nav>
+                </div>
+            )}
+        </>
+    );
+};
+
+
+// --- Individual Page Components ---
+
+const LandingPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen py-10 px-4">
+            <div className={`bg-gradient-to-br from-indigo-800 to-purple-900 ${theme === 'dark' ? 'text-gray-100' : 'text-white'} p-8 md:p-12 rounded-2xl shadow-3xl text-center max-w-4xl mx-auto border border-indigo-700 transform transition-all duration-500 hover:scale-[1.01]`}
+                 style={{ animation: 'fadeInScale 1s ease-out' }}>
+                <h2 className="text-5xl md:text-6xl font-extrabold mb-6 tracking-tight animate-gradient bg-clip-text text-transparent bg-[linear-gradient(45deg,#a78bfa,#c084fc)]">
+                    Welcome to Aethelgard: Forge Your Fate!
+                </h2>
+                <p className="text-lg md:text-xl leading-relaxed mb-8 max-w-2xl mx-auto font-medium">
+                    {renderTextWithTooltips("Brave champion, the threads of fate are fraying! Ancient powers stir, and every choice you make will shape the end. You are not merely playing a game; you are enacting a myth. Prepare to conceal your true purpose, forge hidden alliances, and wield powerful artifacts.")}
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6 mt-10">
+                    <button
+                        onClick={() => setCurrentPage('tutorial')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Swords className="w-12 h-12 mb-3 text-emerald-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Tutorial Setup</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">10-Minute Quick Start!</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-emerald-500 to-indigo-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage('standard')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Shield className="w-12 h-12 mb-3 text-sky-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Standard Setup</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">The Full Game Begins!</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-500 to-purple-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage('ultra')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Sparkles className="w-12 h-12 mb-3 text-yellow-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Ultra Setup</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">Mastering Phases & Skills</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-yellow-500 to-red-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage('character-cards')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Heart className="w-12 h-12 mb-3 text-red-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Character Cards</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">Choose your champion!</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-red-500 to-pink-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage('cards-pedia')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Layers className="w-12 h-12 mb-3 text-purple-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Cards Pedia</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">Unleash Their Power!</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-purple-500 to-blue-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                    <button
+                        onClick={() => setCurrentPage('glossary')}
+                        className={`group relative flex flex-col items-center justify-center p-6 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg
+                                   ${theme === 'dark' ? 'bg-gray-700 hover:bg-indigo-600 text-gray-50' : 'bg-indigo-200 hover:bg-indigo-400 text-gray-900'}
+                                   border ${theme === 'dark' ? 'border-gray-600' : 'border-indigo-300'}`}
+                    >
+                        <Book className="w-12 h-12 mb-3 text-orange-400 group-hover:text-white transition-colors duration-300" />
+                        <span className="text-2xl font-bold">Glossary & Quick Ref</span>
+                        <span className="text-sm mt-1 opacity-80 group-hover:opacity-100 transition-opacity duration-300">Keep this page handy!</span>
+                        <div className="absolute inset-0 rounded-xl bg-gradient-to-br from-orange-500 to-red-500 opacity-0 group-hover:opacity-30 transition-opacity duration-300"></div>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Common Section Header Component
+const SectionHeader = ({ id, title, subtitle, icon: Icon }) => {
+    const { theme } = useTheme();
+    return (
+        <h2 id={id} className={`flex items-center gap-3 text-4xl md:text-5xl font-extrabold mb-6 mt-12 pb-4 border-b-2
+            ${theme === 'dark' ? 'text-indigo-400 border-indigo-700' : 'text-indigo-700 border-indigo-400'}`}>
+            {Icon && <Icon className="w-10 h-10 md:w-12 md:h-12 text-emerald-500" />}
+            {renderTextWithTooltips(title)}
+            {subtitle && <span className={`text-xl md:text-2xl font-semibold opacity-75 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>- {renderTextWithTooltips(subtitle)}</span>}
+        </h2>
+    );
+};
+
+// Common Sub-Section Header Component
+const SubSectionHeader = ({ id, title, icon: Icon }) => {
+    const { theme } = useTheme();
+    return (
+        <h3 id={id} className={`flex items-center gap-2 text-3xl md:text-4xl font-bold mb-5 mt-10 pb-3 border-b
+            ${theme === 'dark' ? 'text-indigo-300 border-indigo-600' : 'text-indigo-600 border-indigo-300'}`}>
+            {Icon && <Icon className="w-8 h-8 md:w-10 md:h-10 text-yellow-500" />}
+            {renderTextWithTooltips(title)}
+        </h3>
+    );
+};
+
+// Common Card Component
+const Card = ({ title, description, effect, lore, children, imagePlaceholder }) => {
+    const { theme } = useTheme();
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+
+    return (
+        <div className={`p-6 rounded-xl shadow-md transition-all duration-300 transform hover:-translate-y-1 hover:shadow-lg
+            ${theme === 'dark' ? 'bg-gray-700 border border-gray-600 text-gray-50' : 'bg-gray-100 border border-gray-200 text-gray-800'}`}>
+            {imagePlaceholder && (
+                <img
+                    src="[Insert Image Link]"
+                    alt={title ? `${title} card image` : "Card image placeholder"}
+                    className="w-full h-48 object-cover mb-4 rounded-lg border border-gray-500"
+                    onError={(e) => { e.target.onerror = null; e.target.src = `https://placehold.co/400x200/4a5568/FFFFFF?text=${encodeURIComponent(imagePlaceholder)}`; }}
+                />
+            )}
+            {title && <h4 className={`text-2xl font-semibold mb-2 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>{renderTextWithTooltips(title)}</h4>}
+            {description && <p className="italic mb-3 opacity-80">{renderTextWithTooltips(description)}</p>}
+            {effect && <p className="mb-3"><strong>Effect:</strong> {renderTextWithTooltips(effect)}</p>}
+            {lore && <p className="mb-3"><em>Lore:</em> "{renderTextWithTooltips(lore)}"</p>}
+            {children}
+        </div>
+    );
+};
+
+// --- Content for Tutorial Setup (Section II) ---
+const TutorialPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+    const noteClass = theme === 'dark' ? 'bg-blue-900 border-blue-500 text-blue-100' : 'bg-blue-100 border-blue-500 text-blue-800';
+    const tipClass = theme === 'dark' ? 'bg-emerald-900 border-emerald-500 text-emerald-100' : 'bg-emerald-100 border-emerald-500 text-emerald-800';
+
+    const sections = [
+        { id: 'tutorial-intro', title: 'Introduction', icon: Book },
+        { id: 'quick-setup', title: 'Quick Setup', icon: Sparkles },
+        { id: 'goal-to-win', title: 'Goal to Win', icon: Ruler },
+        { id: 'first-turn', title: 'Your First Turn', icon: ScrollText },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="tutorial" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                <SectionHeader id="tutorial-intro" title="Your First Game" subtitle="10-Minute Quick Start!" icon={Swords} />
+
+                <SubSectionHeader title="What you'll learn & experience in this section:" icon={Book} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li>Basic setup in ~2 minutes.</li>
+                    <li>Core mechanics: <Tooltip term="ATTACK">ATTACK</Tooltip>, <Tooltip term="DEFENCE">DEFENCE</Tooltip>, <Tooltip term="HEAL">HEAL</Tooltip> cards.</li>
+                    <li>How to track <Tooltip term="HP">HP</Tooltip> and use Character Skills.</li>
+                    <li>The concept of player distance (immediate neighbors).</li>
+                    <li>Openly discussing each identity's victory condition.</li>
+                    <li>Completing a basic turn (Rune, Draw, Action, Discard).</li>
+                </ul>
+                <p className="mb-6 text-lg">Let's dive in! This section gets you playing immediately. Don't worry about every rule yet – just follow these quick steps to experience your first turn.</p>
+
+                <ul className="list-none mb-6 pl-0 space-y-1 text-lg">
+                    <li><strong>Players:</strong> 4-6 (The game adjusts for player count)</li>
+                    <li><strong>Setup Time:</strong> ~2 minutes</li>
+                </ul>
+
+                <SubSectionHeader id="quick-setup" title="Quick Setup: Get Ready to Play!" icon={Sparkles} />
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Sit Circularly:</strong> Arrange yourselves in a circle. This defines your distance from other players.</li>
+                    <li><strong>Get Your Secret Identity to Learn Your Victory Condition:</strong> Each player takes one random Secret Identity Card 🎭. For this 10-Minute Start, you can keep your Identity Card face-up!
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> (<Tooltip term="Ansuz">Ansuz</Tooltip>): Revealed from the start, has 5 <Tooltip term="HP">Health Points (HP)</Tooltip> ❤️.</li>
+                            <li><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip> (<Tooltip term="Algiz">Algiz</Tooltip>) & <Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip> (<Tooltip term="Pertho">Pertho</Tooltip>): Revealed from the start, have 4 <Tooltip term="HP">HP</Tooltip> ❤️.</li>
+                        </ul>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Note:</p>
+                            <p>In the standard game, your Secret Identity Card will be kept secret, adding intrigue and strategic depth. For this 10-Minute Quick Start, you will all keep your Identity Cards face-up for educational purposes. This will allow you to openly discuss and figure out what each identity should be trying to do.</p>
+                        </div>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of relationship among three secret identities.</p>
+                <img src="[Insert Image Link]" alt="Diagram showing the relationship among the three secret identities." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x200/4a5568/FFFFFF?text=Visual+of+Secret+Identities"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Choose Your Character:</strong> Each player takes one random Character Card 👤 (your hero with unique skills). Keep your Character Card face-up!</li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of a Character Card with HP tracker and Identity slot.</p>
+                <img src="[Insert Image Link]" alt="Image of a Character Card with HP tracker and Identity slot" className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x300/4a5568/FFFFFF?text=Visual+of+Character+Card"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Get HP Tracker:</strong> Collect your Life Card. This card tracks your <Tooltip term="HP">Health Points (HP)</Tooltip> ❤️, which is how much 'life' your character has before being eliminated.
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li>The <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> has 5 <Tooltip term="HP">HP</Tooltip> (they have an extra heart!) Other characters have 4 <Tooltip term="HP">HP</Tooltip>.</li>
+                            <li>Place your Character Card over your Life Card to show your current <Tooltip term="HP">HP</Tooltip>. When you lose 1 <Tooltip term="HP">HP</Tooltip>, you cover 1 heart.</li>
+                            <li>If your <Tooltip term="HP">HP</Tooltip> drops to 0, your character is eliminated from the game. You can regain <Tooltip term="HP">HP</Tooltip> with <Tooltip term="HEAL">HEAL</Tooltip> cards, but you can never go above your starting <Tooltip term="HP">HP</Tooltip> limit.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of a Character Card with HP tracker and Identity slot.</p>
+                <img src="[Insert Image Link]" alt="Image of a Character Card with HP tracker and Identity slot" className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x300/4a5568/FFFFFF?text=Visual+of+Character+Card+with+HP"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Shuffle & Deal:</strong> Shuffle all 10-Minute Start Playing Cards (as shown below) to form the <Tooltip term="Draw Pile">Draw Pile</Tooltip>. Deal 2 cards to each player. Keep your hand secret.
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li>10 <Tooltip term="ATTACK">ATTACK</Tooltip> cards</li>
+                            <li>8 <Tooltip term="DEFENCE">DEFENCE</Tooltip> cards</li>
+                            <li>6 <Tooltip term="HEAL">HEAL</Tooltip> cards</li>
+                            <li>1 Vanir-Aesir War</li>
+                            <li>1 Mjölnir</li>
+                            <li>1 Draupnir</li>
+                        </ul>
+                    </li>
+                    <li><strong className={strongClass}>Rune Dice:</strong> Place the <Tooltip term="Rune Dice">Rune Dice</Tooltip> 🎲 in front of the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>. (It has ᛋ, ᛃ, ᚺ symbols).</li>
+                    <li><strong>First Player:</strong> The <Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> goes first! Play proceeds clockwise.</li>
+                </ul>
+
+                <SubSectionHeader id="goal-to-win" title="Your Goal to Win: Know Your Purpose!" icon={Ruler} />
+                <p className="mb-6 text-lg">Every decision you make should lead you toward your unique victory condition.</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip>: Eliminate all <Tooltip term="Thread Breaker ᛈ">Thread Breakers</Tooltip>, OR survive until the very end of the game.</li>
+                    <li><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip>: Help the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> survive. If they win, you win (even if you've been eliminated).</li>
+                    <li><Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip>: Defeat the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>, AND at least one <Tooltip term="Thread Breaker ᛈ">Thread Breaker</Tooltip> must survive (even if you've been eliminated).</li>
+                </ul>
+
+                <SubSectionHeader id="first-turn" title="Your First Turn (Guided Example): Simple Steps to Action!" icon={ScrollText} />
+                <p className="mb-6 text-lg">Follow these simplified steps to play your first turn. We'll explain more later!</p>
+                <ol className="list-decimal list-inside mb-6 space-y-4 text-lg">
+                    <li>
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Rune Phase (Icon: 🎲):</h4>
+                        <ul className="list-circle list-inside ml-6 space-y-1">
+                            <li><strong>Who:</strong> Current Player (You).</li>
+                            <li><strong>Purpose:</strong> Resolve any effects that require a <Tooltip term="Rune Dice">Rune Dice</Tooltip> roll.</li>
+                            <li><strong>What Happens:</strong> If a card or ability tells you to "Roll the <Tooltip term="Rune Dice">Rune Dice</Tooltip> in Rune Phase," do it now. Effects are based on the symbol rolled (see <Tooltip term="Rune Dice">Rune Dice</Tooltip> Results in Section VIII). If no <Tooltip term="Rune Check">Rune Check</Tooltip> is needed, skip this and proceed to Draw Phase.</li>
+                        </ul>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Note:</p>
+                            <p>During the first round, the Rune Phase can often be skipped since no <Tooltip term="EVENT cards">EVENT cards</Tooltip> requiring a <Tooltip term="Rune Check">Rune Check</Tooltip> have been played yet.</p>
+                        </div>
+                    </li>
+                    <li>
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Draw Phase (Icon: ➡️📜):</h4>
+                        <ul className="list-circle list-inside ml-6 space-y-1">
+                            <li><strong>Who:</strong> Current Player (You).</li>
+                            <li><strong>Purpose:</strong> Replenish your hand.</li>
+                            <li><strong>What Happens:</strong> Draw 2 cards.</li>
+                        </ul>
+                    </li>
+                    <li>
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Action Phase (Icon: ✨):</h4>
+                        <ul className="list-circle list-inside ml-6 space-y-1">
+                            <li><strong>Who:</strong> Current Player (You).</li>
+                            <li><strong>Purpose:</strong> Play cards and activate abilities.</li>
+                            <li><strong>What Happens:</strong> You can play up to 3 cards from your hand.</li>
+                            <li><strong>Character Skills:</strong> Most of the character skills can be used in the Action Phase. Follow the instructions on the Character cards.</li>
+                            <li><strong>Basic Attacks:</strong> Try playing an <Tooltip term="ATTACK">ATTACK</Tooltip> card! Select a player immediately next to you. Note: For this Quick Start, you can only play one <Tooltip term="ATTACK">ATTACK</Tooltip> card per turn.
+                                <ul className="list-square list-inside ml-6 mt-2">
+                                    <li><Tooltip term="ATTACK">ATTACK</Tooltip> (Icon: ⚔️): Target loses 1 <Tooltip term="HP">HP</Tooltip> ❤️ unless they play a <Tooltip term="DEFENCE">DEFENCE</Tooltip> card.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                        <p className="text-gray-400 italic text-center mb-4">Visual: Small diagram showing immediate neighbor range (e.g., player A can target player B or C if next to them).</p>
+                        <img src="[Insert Image Link]" alt="Small diagram showing immediate neighbor range (e.g., player A can target player B or C if next to them)." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/400x150/4a5568/FFFFFF?text=Visual+of+Range"; }} />
+                        <ul className="list-circle list-inside ml-6 space-y-1">
+                            <li><strong>Basic Defense:</strong> If you are attacked, you can play a <Tooltip term="DEFENCE">DEFENCE</Tooltip> card.
+                                <ul className="list-square list-inside ml-6 mt-2">
+                                    <li><Tooltip term="DEFENCE">DEFENCE</Tooltip> (Icon: 🛡️): Use when you are targeted by an <Tooltip term="ATTACK">ATTACK</Tooltip> card to block 1 damage.</li>
+                                </ul>
+                            </li>
+                            <li><strong>Basic Healing:</strong> You can play a <Tooltip term="HEAL">HEAL</Tooltip> card.
+                                <ul className="list-square list-inside ml-6 mt-2">
+                                    <li><Tooltip term="HEAL">HEAL</Tooltip> (Icon: 💚): Use in your Action Phase to restore 1 <Tooltip term="HP">HP</Tooltip> ❤️ to yourself.</li>
+                                </ul>
+                            </li>
+                            <li><strong>Other Card Types:</strong> You might draw other cards like:
+                                <ul className="list-square list-inside ml-6 mt-2 space-y-1">
+                                    <li><Tooltip term="EVENT cards">EVENT cards</Tooltip> (Icon: ⚡): These create unique situations that affect players or the game state.</li>
+                                    <li><Tooltip term="ITEM cards">ITEM cards</Tooltip> (Icon: 💎): These are one-time use cards with special, immediate effects.</li>
+                                    <li><Tooltip term="EQUIPMENT cards">EQUIPMENT cards</Tooltip> (Icon: 🛡️): These are one-time use cards that give powerful attack boosts or special combat rules.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li>
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Discard Phase (Icon: ↩️):</h4>
+                        <ul className="list-circle list-inside ml-6 space-y-1">
+                            <li><strong>Who:</strong> Current Player (You).</li>
+                            <li><strong>Purpose:</strong> Manage your hand size.</li>
+                            <li><strong>What Happens:</strong> You can only keep up to 3 cards in your hand.</li>
+                        </ul>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Note:</p>
+                            <p>Your hand size may exceed 3 cards during other players' turns, but you must discard down to 3 at the end of your own Discard Phase.</p>
+                        </div>
+                    </li>
+                </ol>
+                <p className={`mt-6 text-xl font-semibold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}`}>Congratulations! You've completed your first turn! Pass the <Tooltip term="Rune Dice">Rune Dice</Tooltip> 🎲 clockwise. Keep playing, and you'll naturally learn more!</p>
+            </div>
+        </div>
+    );
+};
+
+// --- Content for Standard Setup (Section III) ---
+const StandardGamePage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+    const noteClass = theme === 'dark' ? 'bg-blue-900 border-blue-500 text-blue-100' : 'bg-blue-100 border-blue-500 text-blue-800';
+    const tipClass = theme === 'dark' ? 'bg-emerald-900 border-emerald-500 text-emerald-100' : 'bg-emerald-100 border-emerald-500 text-emerald-800';
+
+    const sections = [
+        { id: 'standard-intro', title: 'Introduction', icon: Book },
+        { id: 'standard-setup-full', title: 'Full Setup', icon: Sparkles },
+        { id: 'core-gameplay', title: 'Core Gameplay', icon: List },
+        { id: 'period-1', title: 'Period 1: Observation', icon: Moon },
+        { id: 'period-2', title: 'Period 2: Revelation', icon: Sun },
+        { id: 'period-3', title: 'Period 3: Ragnarök', icon: Zap },
+        { id: 'turn-order', title: 'Turn Order', icon: Info },
+        { id: 'game-end', title: 'Game End Condition', icon: Ruler },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="standard" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                <SectionHeader id="standard-intro" title="Your First Standard Setup" subtitle="The Full Game Begins!" icon={Shield} />
+
+                <SubSectionHeader title="What you'll learn & experience in this section:" icon={Book} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li>Standard game setup (~10-15 minutes).</li>
+                    <li>Hidden Identity and secret victory conditions.</li>
+                    <li>Introduction of all Playing Cards (<Tooltip term="EVENT cards">EVENT</Tooltip>, <Tooltip term="ITEM cards">ITEM</Tooltip>, <Tooltip term="EQUIPMENT cards">EQUIPMENT</Tooltip>).</li>
+                    <li>The concept of three Game Periods (<Tooltip term="Observation Period">Observation</Tooltip>, <Tooltip term="Revelation Period">Revelation</Tooltip>, <Tooltip term="Ragnarök Period">Ragnarök</Tooltip>).</li>
+                    <li>Basic Dynamic Distance Rule (<Tooltip term="ATTACK">Attack</Tooltip> Distance = 1 & 2).</li>
+                    <li>Your full turn order with all phases.</li>
+                </ul>
+                <p className="mb-6 text-lg">Ready to dive deeper? This section guides you through setting up and understanding the full game of Fate and Ragnarök, introducing all components and core mechanics.</p>
+
+                <ul className="list-none mb-6 pl-0 space-y-1 text-lg">
+                    <li><strong>Players:</strong> 4-6 (The game adjusts for player count)</li>
+                    <li><strong>Setup Time:</strong> ~10-15 minutes (after your first 10-minute game)</li>
+                </ul>
+
+                <SubSectionHeader id="standard-setup-full" title="Standard Setup: All Components in Play!" icon={Sparkles} />
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Sit Circularly</strong></li>
+                    <li><strong>Choose Your Character & Identity:</strong> Each player takes two random Character Cards 👤 (your hero with unique skills and <Tooltip term="HP">HP</Tooltip> tracker) and one random Identity Card 🎭. Select one Character Card to play, and give the other back face-down. Keep your Identity Card secret, and reveal your Character Card!
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> (<Tooltip term="Ansuz">Ansuz</Tooltip>): Revealed from the start, has 5 <Tooltip term="HP">Health Points (HP)</Tooltip> ❤️.</li>
+                            <li><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip> (<Tooltip term="Algiz">Algiz</Tooltip>) & <Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip> (<Tooltip term="Pertho">Pertho</Tooltip>): Kept secret, start with 4 <Tooltip term="HP">HP</Tooltip> ❤️. Your hidden role adds intrigue and strategy!</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of a Character Card with HP tracker and Identity slot.</p>
+                <img src="[Insert Image Link]" alt="Image of a Character Card with HP tracker and Identity slot" className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x300/4a5568/FFFFFF?text=Visual+of+Character+Card"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Set HP:</strong> Collect your Life Card with 4 <Tooltip term="HP">HP</Tooltip> ❤️ (<Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> has a Life Card with 5 <Tooltip term="HP">HP</Tooltip> ❤️). You can place your Character Card over the Life Card to mark your current <Tooltip term="HP">HP</Tooltip>. If you lose 1 <Tooltip term="HP">HP</Tooltip>, then cover 1 heart. You cannot heal above this limit.</li>
+                    <li><strong>Shuffle & Deal:</strong> Shuffle all Playing Cards (this includes not just <Tooltip term="ATTACK">ATTACK</Tooltip>, <Tooltip term="DEFENCE">DEFENCE</Tooltip>, and <Tooltip term="HEAL">HEAL</Tooltip>, but also <Tooltip term="EVENT cards">EVENT</Tooltip>, <Tooltip term="ITEM cards">ITEM</Tooltip>, and <Tooltip term="EQUIPMENT cards">EQUIPMENT</Tooltip> cards) to form the <Tooltip term="Draw Pile">Draw Pile</Tooltip>. Deal 3 cards to each player. Keep your hand secret.</li>
+                    <li><strong className={strongClass}>Rune Dice:</strong> Place the <Tooltip term="Rune Dice">Rune Dice</Tooltip> 🎲 in front of the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>. (It has ᛋ, ᛃ, ᚺ symbols).</li>
+                    <li><strong>First Player:</strong> The <Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> goes first! Play proceeds clockwise.</li>
+                </ul>
+                <p className={`mt-6 text-xl font-semibold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}`}>Congratulations! You are now good to continue the next section - The Cycle of Power.</p>
+
+                <SubSectionHeader id="core-gameplay" title="Core Gameplay: The Cycle of Power (Full Game)" icon={List} />
+                <p className="mb-6 text-lg">A game of "Fate and Ragnarök" flows through three main Game Periods, each triggered by the <Tooltip term="Draw Pile">Draw Pile</Tooltip> running out.</p>
+                <p className={`italic text-lg mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>“Fate is not written. It is fought for.”</p>
+
+                <h4 id="period-1" className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>🌘 <Tooltip term="Observation Period">Period 1: Observation – Whispers in the Loom</Tooltip></h4>
+                <p className={`italic mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>“The loom spins in silence. Every action is a whisper. Every silence hides a sword.”</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Time:</strong> About 3 rounds of play.</li>
+                    <li><strong>Goal:</strong> Build tension. Mask your intentions. Observe and suspect. This is a time to hint at subtle alliances, not outright war.</li>
+                    <li><strong>What Happens:</strong> Players take turns to play <Tooltip term="EVENT cards">Event</Tooltip>, <Tooltip term="ATTACK">Attack</Tooltip>, or <Tooltip term="HEAL">Heal</Tooltip> cards. Identities are hidden. Alliances unknown. Everyone is silently watching — piecing together identities through choices.</li>
+                    <li><Tooltip term="ATTACK">Attack</Tooltip> Tempo (Icon: ⚔️):
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Amount of ATTACK:</strong> Max 1 <Tooltip term="ATTACK">ATTACK</Tooltip> card per player per round.</li>
+                            <li><Tooltip term="ATTACK">Attack</Tooltip> Distance (Icon: ↔️): Your <Tooltip term="ATTACK">ATTACK</Tooltip> card (Icon: ⚔️) can only target players immediately next to you (1 seat left or right).</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of Distance Counting (showing 1-seat range).</p>
+                <img src="[Insert Image Link]" alt="Image of Distance Counting (showing 1-seat range)." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x200/4a5568/FFFFFF?text=Visual+of+1-Seat+Range"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Period Transition:</strong> This period ends when the <Tooltip term="Draw Pile">Draw Pile</Tooltip> is depleted for the first time. All discarded cards are then reshuffled to form a new <Tooltip term="Draw Pile">Draw Pile</Tooltip>. This immediately moves the game into the <Tooltip term="Revelation Period">Revelation Period</Tooltip>.</li>
+                </ul>
+                <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                    <p className="font-semibold">Note:</p>
+                    <p>The threads of Fate are still intertwined and require time to untangle. Please proceed with the current <Tooltip term="Draw Pile">draw pile</Tooltip> until it is depleted, then continue reading the description of the next Period.</p>
+                </div>
+                <div className={`p-4 rounded-md my-4 border-l-4 ${tipClass}`}>
+                    <p className="font-semibold">Suggestions:</p>
+                    <p>Familiarize yourself with the capabilities of different cards and discover their hidden potential.</p>
+                </div>
+
+                <h4 id="period-2" className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>🔥 <Tooltip term="Revelation Period">Period 2: Revelation – Echoes of Truth</Tooltip></h4>
+                <p className={`italic mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>“Masks crack. Names are spoken. Fate burns brighter with every revealed soul.”</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Time:</strong> About 3 rounds.</li>
+                    <li><strong>Goal:</strong> Masks are still on, but the truth has been partially revealed. Alliances and enemies are not as unknown as beginning, it is time to have real fights.</li>
+                    <li><strong>What Happens:</strong> In this period, players more or less get clues about each other's hidden identities. Collaborate with your alliance to beat the right target.</li>
+                    <li><Tooltip term="ATTACK">Attack</Tooltip> Tempo (Icon: ⚔️):
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Amount of ATTACK:</strong> Max 2 <Tooltip term="ATTACK">ATTACK</Tooltip> cards per player per round. You cannot target the same player twice in one round.</li>
+                            <li><strong>Distance (Icon: ↔️):</strong> Your <Tooltip term="ATTACK">ATTACK</Tooltip> card (Icon: ⚔️) can target players positioned up to two seats away on either side of you.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of Distance Counting (showing 2-seat range).</p>
+                <img src="[Insert Image Link]" alt="Image of Distance Counting (showing 2-seat range)." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x200/4a5568/FFFFFF?text=Visual+of+2-Seat+Range"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Period Transition:</strong> This period ends when the <Tooltip term="Draw Pile">Draw Pile</Tooltip> is depleted for the second time. All discarded cards are then reshuffled to create the final <Tooltip term="Draw Pile">Draw Pile</Tooltip>. This immediately moves the game into the <Tooltip term="Ragnarök Period">Ragnarök Period</Tooltip>.</li>
+                </ul>
+
+                <h4 id="period-3" className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>🌑 <Tooltip term="Ragnarök Period">Period 3: Ragnarök – The Threads Unravel</Tooltip></h4>
+                <p className={`italic mb-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>“The world ends not in silence, but in fire. Gods clash. Destiny demands a price.”</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Time:</strong> About 3 rounds.</li>
+                    <li><strong>Goal:</strong> Play your final card. Wield your destiny. Decide who survives — and what truth remains. All players unlock their ultimate Ragnarök Skills. <Tooltip term="Thread Breaker ᛈ">Thread Breakers</Tooltip> need to act fast!</li>
+                    <li><strong>What Happens:</strong> All players unlock their Ragnarök Skills — final powers linked to their true role.</li>
+                    <li><Tooltip term="ATTACK">Attack</Tooltip> Tempo (Icon: ⚔️):
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Amount of ATTACK:</strong> Max 2 <Tooltip term="ATTACK">ATTACK</Tooltip> cards per player per round. You can target anyone (including the same target) multiple times!</li>
+                            <li><strong>Distance (Icon: ↔️):</strong> Your <Tooltip term="ATTACK">ATTACK</Tooltip> card (Icon: ⚔️) can target anyone, regardless of distance.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of Distance Counting (showing unlimited range).</p>
+                <img src="[Insert Image Link]" alt="Image of Distance Counting (showing unlimited range)." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x200/4a5568/FFFFFF?text=Visual+of+Unlimited+Range"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Game End:</strong> This period ends when the <Tooltip term="Draw Pile">Draw Pile</Tooltip> is depleted for the third and final time, OR when any Identity Victory Conditions are met.</li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of Distance Counting.</p>
+                <img src="[Insert Image Link]" alt="Image of Distance Counting." className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x200/4a5568/FFFFFF?text=Visual+of+Distance+Counting"; }} />
+
+                <SubSectionHeader id="turn-order" title="Turn Order (Icon: 🔄)" icon={Info} />
+                <p className="mb-6 text-lg">Play proceeds clockwise. Each player completes all phases of their turn before the next player's turn.</p>
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong className={strongClass}>Rune Phase (🎲):</strong> Check for <Tooltip term="Rune Dice">Rune</Tooltip> Rolls.
+                        <ul className="list-circle list-inside ml-6 mt-2">
+                            <li>If a card or ability requires a <Tooltip term="Rune Dice">Rune Dice</Tooltip> roll, do it now. If not, skip to the next phase.</li>
+                        </ul>
+                    </li>
+                    <li><strong className={strongClass}>Draw Phase (➡️📜):</strong> Draw Cards.
+                        <ul className="list-circle list-inside ml-6 mt-2">
+                            <li>Draw 2 cards.</li>
+                        </ul>
+                    </li>
+                    <li><strong className={strongClass}>Action Phase (✨):</strong> Play & Activate.
+                        <ul className="list-circle list-inside ml-6 mt-2">
+                            <li>Play up to 3 cards from your hand.</li>
+                            <li>Activate abilities.</li>
+                            <li>Remember: In different periods, you have different <Tooltip term="ATTACK">ATTACK</Tooltip> rules:
+                                <ul className="list-square list-inside ml-6 mt-2 space-y-1">
+                                    <li><Tooltip term="Observation Period">Observation Period</Tooltip>: 1 <Tooltip term="ATTACK">ATTACK</Tooltip> card per turn. Distance = 1.</li>
+                                    <li><Tooltip term="Revelation Period">Revelation Period</Tooltip>: 2 <Tooltip term="ATTACK">ATTACK</Tooltip> cards per turn, cannot target the same player. Distance = 2.</li>
+                                    <li><Tooltip term="Ragnarök Period">Ragnarök Period</Tooltip>: 2 <Tooltip term="ATTACK">ATTACK</Tooltip> cards per turn, target anyone you want in any amount. No distance limit.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li><strong className={strongClass}>Discard Phase (↩️):</strong> Manage Hand Size.
+                        <ul className="list-circle list-inside ml-6 mt-2">
+                            <li>Discard down to 3 cards in your hand.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <SubSectionHeader id="game-end" title="Game End Condition: When Fate is Decided!" icon={Ruler} />
+                <p className="mb-6 text-lg">The game typically concludes after the <Tooltip term="Draw Pile">Draw Pile</Tooltip> has been depleted and reshuffled for the third time. This marks the end of the <Tooltip term="Ragnarök Period">Ragnarök Period</Tooltip>. Alternatively, the game ends immediately if any Identity Victory Conditions are met before this.</p>
+            </div>
+        </div>
+    );
+};
+
+// --- Content for Ultra Setup (Section IV) ---
+const UltraSetupPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+    const italicClass = theme === 'dark' ? 'italic text-gray-400' : 'italic text-gray-600';
+    const noteClass = theme === 'dark' ? 'bg-blue-900 border-blue-500 text-blue-100' : 'bg-blue-100 border-blue-500 text-blue-800';
+    const tipClass = theme === 'dark' ? 'bg-emerald-900 border-emerald-500 text-emerald-100' : 'bg-emerald-100 border-emerald-500 text-emerald-800';
+    const exampleClass = theme === 'dark' ? 'bg-gray-700 border border-gray-600 p-4 rounded-md my-4' : 'bg-gray-100 border border-gray-300 p-4 rounded-md my-4';
+
+    const sections = [
+        { id: 'ultra-intro', title: 'Introduction', icon: Book },
+        { id: 'new-elements', title: 'New Elements', icon: Gem },
+        { id: 'ultra-game-setup', title: 'Ultra Game Setup', icon: Sparkles },
+        { id: 'fate-watcher', title: 'Fate Watcher Mechanism', icon: Info },
+        { id: 'identity-skills', title: 'Identity Skills', icon: Ruler },
+        { id: 'one-time-disclosure', title: 'One-Time Disclosure Skill', icon: Sun },
+        { id: 'one-time-ragnarok', title: 'One-Time Ragnarök Skill', icon: Zap },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="ultra" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                {/* Section IV: Your First Ultra Setup: Mastering Phases & Skills */}
+                <SectionHeader id="ultra-intro" title="Your First Ultra Setup" subtitle="Mastering Phases & Skills" icon={Sparkles} />
+                <SubSectionHeader title="What you'll learn & experience in this section:" icon={Book} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li>Advanced strategies related to Fate Watcher and <Tooltip term="Fate Marks">Fate Marks</Tooltip>.</li>
+                    <li>Dynamic <Tooltip term="ATTACK">Attack</Tooltip> Tempo (how many attacks you can make per turn).</li>
+                    <li>Dynamic <Tooltip term="ATTACK">Attack</Tooltip> Distance (how far you can target players).</li>
+                    <li>Your Unique Skills based on Secret Identity (One-Time Disclosure Skills and Ragnarök Skills).</li>
+                </ul>
+                <p className="mb-6 text-lg">This section introduces the dynamic shifts and powerful abilities that define strategic play in Fate and Ragnarök. Understanding these concepts is key to mastering the game.</p>
+
+                <SubSectionHeader id="new-elements" title="New Elements:" icon={Gem} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li>Dynamic <Tooltip term="ATTACK">Attack</Tooltip> Rule based on three Game Periods</li>
+                    <li>Unique Skills based on Secret Identity</li>
+                    <li>Fate Watcher</li>
+                </ul>
+
+                <ul className="list-none mb-6 pl-0 space-y-1 text-lg">
+                    <li><strong>Players:</strong> 4-6 (The game adjusts for player count)</li>
+                    <li><strong>Setup Time:</strong> ~10-15 minutes after First Standard Game.</li>
+                </ul>
+
+                <SubSectionHeader id="ultra-game-setup" title="Ultra Game Setup: All Components in Play!" icon={Sparkles} />
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Sit Circularly</strong></li>
+                    <li><strong>Choose Your Character & Identity:</strong> Each player takes two random Character Cards 👤 (your hero with unique skills and <Tooltip term="HP">HP</Tooltip> tracker) and one random Identity Card 🎭. Select one Character Card to play, and give the other back face-down. Keep your Identity Card secret, and reveal your Character Card!
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> (<Tooltip term="Ansuz">Ansuz</Tooltip>): Revealed from the start, has 5 <Tooltip term="HP">Health Points (HP)</Tooltip> ❤️.</li>
+                            <li><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip> (<Tooltip term="Algiz">Algiz</Tooltip>) & <Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip> (<Tooltip term="Pertho">Pertho</Tooltip>): Kept secret, start with 4 <Tooltip term="HP">HP</Tooltip> ❤️. Your hidden role adds intrigue and strategy!</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p className="text-gray-400 italic text-center mb-4">Visual: Image of a Character Card with HP tracker and Identity slot.</p>
+                <img src="[Insert Image Link]" alt="Image of a Character Card with HP tracker and Identity slot" className="my-6 max-w-full h-auto rounded-lg shadow-md mx-auto block border border-gray-600" onError={(e) => { e.target.onerror = null; e.target.src = "https://placehold.co/600x300/4a5568/FFFFFF?text=Visual+of+Character+Card"; }} />
+
+                <ul className="list-disc list-inside mb-6 space-y-3 text-lg">
+                    <li><strong>Set HP:</strong> Collect your Life Card with 4 <Tooltip term="HP">HP</Tooltip> ❤️ (<Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> has a Life Card with 5 <Tooltip term="HP">HP</Tooltip> ❤️). You can place your Character Card over the Life Card to mark your current <Tooltip term="HP">HP</Tooltip>. If you lose 1 <Tooltip term="HP">HP</Tooltip>, then cover 1 heart.</li>
+                    <li><strong>Get Fate Watcher Card, Fate Weaver Guess Sheet:</strong> Every player has one Fate Watcher Card and the Fate Weaver Guess Sheet 📝. And <Tooltip term="Fate Marks">Fate Marks</Tooltip> ⭐ are placed near the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>.</li>
+                    <li><strong>Shuffle & Deal:</strong> Shuffle all Playing Cards to form the <Tooltip term="Draw Pile">Draw Pile</Tooltip>. Deal 3 cards to each player. Keep your hand secret.</li>
+                    <li><strong className={strongClass}>Rune Dice:</strong> Place the <Tooltip term="Rune Dice">Rune Dice</Tooltip> 🎲 in front of the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>. (It has ᛋ, ᛃ, ᚺ symbols).</li>
+                    <li><strong>First Player:</strong> The <Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip> goes first! Play proceeds clockwise.</li>
+                </ul>
+                <p className={`mt-6 text-xl font-semibold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'}`}>Congratulations! You are now good to continue the next section - The Cycle of Power.</p>
+
+                <SubSectionHeader id="fate-watcher" title="Fate Watcher Mechanism" icon={Info} />
+                <p className="mb-6 text-lg">The Fate Watcher mechanism adds a layer of deduction and reward to the game.</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Setup:</strong> Every player has one Fate Watcher Card and the Fate Weaver Guess Sheet 📝 and <Tooltip term="Fate Marks">Fate Marks</Tooltip> ⭐ are placed near the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip>.</li>
+                    <li><strong>How it Works (Start of Turn):</strong> At the start of the current player's turn, before they play any cards, every other player (not the current player) secretly guesses if the current player will use 3 cards during their Action Phase. Players hide their Fate Watcher Card by putting their hand on top of it to keep their guess secret.</li>
+                </ul>
+                <p className={`italic mb-4 ml-8 ${italicClass}`}>Observe fate. Predict wisely.</p>
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong>Resolution (End of Action Phase):</strong> After the current player completes their Action Phase, all other players' secret guesses about their card usage are revealed.
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li>Correct guesses earn <Tooltip term="Fate Marks">Fate Marks</Tooltip> ⭐ for those players.</li>
+                            <li>Every 5 <Tooltip term="Fate Marks">Fate Marks</Tooltip> allows a player to draw 1 <Tooltip term="Bonus Card">Bonus Card</Tooltip> 📜✨ immediately from the <Tooltip term="Draw Pile">Draw Pile</Tooltip>.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <div className={exampleClass}>
+                    <p><strong>Example:</strong> It's Player A's turn! Before they dive into the Rune Phase, everyone makes a secret guess. You'll use your Fate Watcher Card to predict whether Player A will use 3 cards during their Action Phase. Once Player A's turn is over, reveal your guesses! If you guessed correctly, you earn 1 <Tooltip term="Fate Marks">Fate Mark</Tooltip> ⭐.</p>
+                </div>
+
+                <SubSectionHeader id="identity-skills" title="Identity Skills: Wield Your True Power!" icon={Ruler} />
+                <p className="mb-6 text-lg">Your secret Identity not only determines your ultimate goal, but also grants you powerful unique skills.</p>
+
+                <h4 id="one-time-disclosure" className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Your One-Time Disclosure Skill (During <Tooltip term="Revelation Period">Revelation Period</Tooltip> 🔥):</h4>
+                <p className="mb-6 text-lg">Each identity has a powerful skill that can only be activated once during the <Tooltip term="Revelation Period">Revelation Period</Tooltip>. Use it wisely!</p>
+                <ul className="list-disc list-inside mb-8 space-y-6 text-lg">
+                    <li><strong className={strongClass}><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Condition:</strong> None</li>
+                            <li><strong>Timing:</strong> At the start of your turn during the <Tooltip term="Revelation Period">Revelation Period</Tooltip>.</li>
+                            <li><strong>Skill:</strong> Guess All Identities. Secretly write down your suspicion about the true identity of every other player. Once they reveal themselves, compare your deductions to their actual roles.</li>
+                            <li><strong>Reward:</strong> For each correct guess, draw 1 <Tooltip term="Bonus Card">Bonus Card</Tooltip> 📜✨ immediately from the <Tooltip term="Draw Pile">Draw Pile</Tooltip>.</li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> If you correctly guess that Player A is <Tooltip term="Hidden Order ᛉ">Hidden Order</Tooltip> when they reveal their secret identity, then you draw 1 <Tooltip term="Bonus Card">Bonus Card</Tooltip> immediately.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${tipClass}`}>
+                            <p className="font-semibold">Strategic Tip:</p>
+                            <p>Your correct guesses also empower your Ragnarök skill!</p>
+                        </div>
+                    </li>
+                    <li><strong className={strongClass}><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Condition:</strong> Discard 1 card from your hand.</li>
+                            <li><strong>Timing:</strong> Anytime.</li>
+                            <li><strong>Skill:</strong> Reveal & Balance. Flip your Secret Identity Card to announce you are the <Tooltip term="Hidden Order ᛉ">Hidden Order</Tooltip>. Choose one target player. Your <Tooltip term="HP">HP</Tooltip> and their <Tooltip term="HP">HP</Tooltip> are both set to the average (rounded up).</li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> You are at 4 <Tooltip term="HP">HP</Tooltip>, and the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> is at 1 <Tooltip term="HP">HP</Tooltip>. You reveal, and both your <Tooltip term="HP">HP</Tooltip> become (4+1)/2 = 2.5 = 3 <Tooltip term="HP">HP</Tooltip> (rounded up).</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Note:</p>
+                            <p>Cannot use if either you or the target player currently have 0 <Tooltip term="HP">HP</Tooltip>. This skill helps you align with or protect the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> or wear down the <Tooltip term="Thread Breaker ᛈ">Thread Breaker</Tooltip>.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${tipClass}`}>
+                            <p className="font-semibold">Strategic Tip:</p>
+                            <p>You may want to use this skill when you are low <Tooltip term="HP">HP</Tooltip> and <Tooltip term="Thread Breaker ᛈ">Thread Breaker</Tooltip> is high <Tooltip term="HP">HP</Tooltip>!</p>
+                        </div>
+                    </li>
+                    <li><strong className={strongClass}><Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Condition:</strong> Discard 1 card from your hand.</li>
+                            <li><strong>Timing:</strong> During your Action Phase.</li>
+                            <li><strong>Skill:</strong> Reveal Identity & Duel. Flip your Secret Identity Card to announce you are a <Tooltip term="Thread Breaker ᛈ">Thread Breaker</Tooltip>, and in this turn, you can use <Tooltip term="DEFENCE">DEFENCE</Tooltip> cards from your hand as normal <Tooltip term="ATTACK">ATTACK</Tooltip> cards (it deals 1 damage). Then, you may initiate a Fate Duel with 1 target player; you can target them with up to two attacks. The target may play up to 2 <Tooltip term="ATTACK">ATTACK</Tooltip> cards back (but cannot use <Tooltip term="DEFENCE">DEFENCE</Tooltip> as <Tooltip term="ATTACK">ATTACK</Tooltip>).</li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> To start a Fate Duel, you must reveal your Secret Identity. You play an <Tooltip term="ATTACK">ATTACK</Tooltip> or <Tooltip term="DEFENCE">DEFENCE</Tooltip> card against Player A. Player A can choose to counter with an <Tooltip term="ATTACK">ATTACK</Tooltip>. You then have the option to play another <Tooltip term="ATTACK">ATTACK</Tooltip> or <Tooltip term="DEFENCE">DEFENCE</Tooltip> card against Player A. Player A can counter again, but unlike you, they cannot use a <Tooltip term="DEFENCE">DEFENCE</Tooltip> card as an <Tooltip term="ATTACK">ATTACK</Tooltip> card.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Duel Clarification:</p>
+                            <p>Attacks in this duel are blockable by <Tooltip term="DEFENCE">DEFENCE</Tooltip>.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${tipClass}`}>
+                            <p className="font-semibold">Strategic Tip:</p>
+                            <p>With a strong hand of <Tooltip term="ATTACK">ATTACK</Tooltip> or <Tooltip term="DEFENCE">DEFENSE</Tooltip> cards, you are ready to become the ruler of the battlefield.</p>
+                        </div>
+                    </li>
+                </ul>
+
+                <h4 id="one-time-ragnarok" className={`text-2xl font-bold mb-4 ${theme === 'dark' ? 'text-indigo-200' : 'text-indigo-700'}`}>Your One-Time Ragnarök Skill (During <Tooltip term="Ragnarök Period">Ragnarök Period</Tooltip> 🌑):</h4>
+                <p className="mb-6 text-lg">These are your ultimate powers, usable once during the <Tooltip term="Ragnarök Period">Ragnarök Period</Tooltip>. Take the final chance.</p>
+                <ul className="list-disc list-inside mb-8 space-y-6 text-lg">
+                    <li><strong className={strongClass}><Tooltip term="Fate Weaver ᚨ">Fate Weaver ᚨ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Timing:</strong> Anytime.</li>
+                            <li><strong>Skill:</strong> Reroll Fate. At any <Tooltip term="Rune Check">Rune Check</Tooltip> affecting you, you may re-roll the result up to X times, where X is the number of correct identity guesses you made during the <Tooltip term="Revelation Period">Revelation Period</Tooltip>.</li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> If a crucial <Tooltip term="Rune Check">Rune Check</Tooltip> for you results in ᚺ, and you made 3 correct guesses earlier, you can re-roll the die up to 3 times to get a better outcome.</p>
+                        </div>
+                    </li>
+                    <li><strong className={strongClass}><Tooltip term="Hidden Order ᛉ">Hidden Order ᛉ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Condition:</strong> Discard 1 <Tooltip term="HP">HP</Tooltip>.</li>
+                            <li><strong>Timing:</strong> Anytime.</li>
+                            <li><strong>Skill:</strong> Manipulate Fate. You may alter any single <Tooltip term="Rune Dice">Rune Dice</Tooltip> outcome (before it is rolled): Make a roll worse (ᛋ → ᛃ and ᛃ → ᚺ) OR make a roll better (ᚺ → ᛃ and ᛃ → ᛋ).</li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> Before another player rolls the <Tooltip term="Rune Dice">Rune Dice</Tooltip> for a critical effect, you discard 1 <Tooltip term="HP">HP</Tooltip> to declare the roll will be worse (ᛋ → ᛃ and ᛃ → ᚺ). If the target rolls a ᛃ, then it is treated as ᚺ.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${tipClass}`}>
+                            <p className="font-semibold">Strategic Tip:</p>
+                            <p>This skill allows you to manipulate fate to benefit the <Tooltip term="Fate Weaver ᚨ">Fate Weaver</Tooltip> or hinder <Tooltip term="Thread Breaker ᛈ">Thread Breakers</Tooltip>.</p>
+                        </div>
+                    </li>
+                    <li><strong className={strongClass}><Tooltip term="Thread Breaker ᛈ">Thread Breaker ᛈ</Tooltip>:</strong>
+                        <ul className="list-circle list-inside ml-6 mt-2 space-y-1">
+                            <li><strong>Condition:</strong> Cost: Discard 1 or 2 cards from your hand.</li>
+                            <li><strong>Timing:</strong> During your Action Phase.</li>
+                            <li><strong>Skill:</strong> Destiny All In. In your Action Phase, you may initiate 1 or 2 Destiny All In by discarding 1 or 2 cards from your hand. For each Destiny All In: Choose a target and roll the <Tooltip term="Rune Dice">Rune Dice</Tooltip>:
+                                <ul className="list-square list-inside ml-6 mt-2 space-y-1">
+                                    <li>ᛋ: Good for you. The target loses 1 <Tooltip term="HP">HP</Tooltip> ❤️.</li>
+                                    <li>ᛃ: Okay for you. The target discards 1 card 📜.</li>
+                                    <li>ᚺ: Bad for you. Nothing happens to the target.</li>
+                                </ul>
+                            </li>
+                        </ul>
+                        <div className={exampleClass}>
+                            <p><strong>Example:</strong> You discard 2 cards to initiate two separate Destiny All In. In the first Destiny All In, you target Player A and roll ᛋ, causing them to lose 1 <Tooltip term="HP">HP</Tooltip>. In the second Destiny All In, you target Player B and roll ᛃ, forcing them to discard 1 card. Neither can be blocked.</p>
+                        </div>
+                        <div className={`p-4 rounded-md my-4 border-l-4 ${noteClass}`}>
+                            <p className="font-semibold">Clarification:</p>
+                            <p>These Destiny All In resolve separately and cannot be blocked.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+// --- Character Cards Page (Section V) ---
+const CharacterCardsPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+
+    const sections = [
+        { id: 'character-intro', title: 'Introduction', icon: Book },
+        { id: 'freyja', title: 'Freyja', icon: Heart },
+        { id: 'njordr', title: 'Njörðr', icon: Heart },
+        { id: 'loki', title: 'Loki', icon: Heart },
+        { id: 'frigg', title: 'Frigg', icon: Heart },
+        { id: 'angrboda', title: 'Angrboða', icon: Heart },
+        { id: 'ymir', title: 'Ymir', icon: Heart },
+        { id: 'odin', title: 'Odin', icon: Heart },
+        { id: 'thor', title: 'Thor', icon: Heart },
+        { id: 'aegir', title: 'Ægir', icon: Heart },
+        { id: 'ran', title: 'Rán', icon: Heart },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="character-cards" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                <SectionHeader id="character-intro" title="Character Cards" icon={Heart} />
+                <p className="mb-6 text-lg">Choose your champion! Each character brings unique abilities to shape the fate of the realms.</p>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6 text-lg">
+                    <Card id="freyja" title="Freyja 👤" description='"My love weeps gold, my wrath commands warriors."' imagePlaceholder="Freyja Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Tears of Freyja</h4>
+                        <p className="mb-3"><em>Description:</em> Her grief for Óðr flows as shimmering gold and boundless compassion.</p>
+                        <p><strong>Effect:</strong> When you take damage, draw 2 cards. Keep one for yourself and give the other to any player — including yourself.</p>
+                    </Card>
+                    <Card id="njordr" title="Njörðr 👤" description='"The sea bows to none, as do I."' imagePlaceholder="Njörðr Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>God of Trade</h4>
+                        <p className="mb-3"><em>Description:</em> Where the tides flow, so does his boundless wealth.</p>
+                        <p><strong>Effect:</strong> Once per turn, discard 2 cards to draw 2. Keep one, and grant the other to another player.</p>
+                    </Card>
+                    <Card id="loki" title="Loki 👤" description='"Chaos is no ruin — it is art without a blueprint."' imagePlaceholder="Loki Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Thief of Treasures</h4>
+                        <p className="mb-3"><em>Description:</em> From Brísingamen to the whispered secrets of the gods, nothing escapes his cunning grasp.</p>
+                        <p><strong>Effect:</strong> During your Draw Phase, you may forgo drawing 2 from the <Tooltip term="Draw Pile">pile</Tooltip> and instead draw 1 random card from a chosen player’s hand.</p>
+                    </Card>
+                    <Card id="frigg" title="Frigg 👤" description='"Through my fingers run the threads of destiny."' imagePlaceholder="Frigg Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Sight Beyond Fate</h4>
+                        <p className="mb-3"><em>Description:</em> She peers into the tapestry of time, reshaping the strands at will.</p>
+                        <p><strong>Effect:</strong> Discard 2 cards from your hand to alter a player’s <Tooltip term="Rune Dice">Rune Dice</Tooltip> — change ᛃ to ᛋ, or ᚺ.</p>
+                    </Card>
+                    <Card id="angrboda" title="Angrboða 👤" description='"My children herald the end, yet I am their beginning."' imagePlaceholder="Angrboða Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Mother of Monsters</h4>
+                        <p className="mb-3"><em>Description:</em> She bore Fenrir, Jörmungandr, and Hel — each a prophecy given flesh and fury.</p>
+                        <p><strong>Effect:</strong> If her final card is an <Tooltip term="ATTACK">ATTACK</Tooltip> and it hits, she may immediately launch 3 separate attacks against 3 different opponents.</p>
+                    </Card>
+                    <Card id="ymir" title="Ymir 👤" description='"From my fall, your world was born."' imagePlaceholder="Ymir Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Ancestor of the Frost Giants</h4>
+                        <p className="mb-3"><em>Description:</em> From Ymir’s body rose the first frost giants — his suffering yields creation and strength in battle.</p>
+                        <p><strong>Effect:</strong> Whenever Ymir takes 1 damage, summon 1 Frost Giant (max 2). The cards that harmed him serve as markers.
+                            <br/>Spend 2 Frost Giants to:
+                            <ul className="list-circle list-inside ml-4 mt-2">
+                                <li>Empower Next Attack: Deal double damage; a single <Tooltip term="DEFENCE">Defence</Tooltip> Card blocks only 1 damage.</li>
+                                <li>Fully Block Next Attack: Negates damage, equivalent to one <Tooltip term="DEFENCE">Defence</Tooltip> Card.</li>
+                            </ul>
+                        </p>
+                    </Card>
+                    <Card id="odin" title="Odin 👤" description='"Allfather of the Æsir"' imagePlaceholder="Odin Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Guider of Fates</h4>
+                        <p className="mb-3"><em>Description:</em> From whisper to storm, Odin steers the course of destiny.</p>
+                        <p><strong>Effect:</strong> Discard 2 cards to compel any player to redo a <Tooltip term="Rune Check">Rune Check</Tooltip> — whether it succeeded or failed.</p>
+                    </Card>
+                    <Card id="thor" title="Thor 👤" description='"The Thunder."' imagePlaceholder="Thor Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Stormforged Will</h4>
+                        <p className="mb-3"><em>Description:</em> The storm answers both his strike and his shield.</p>
+                        <p><strong>Effect:</strong> You may strike the same target again during the <Tooltip term="Revelation Period">Revelation Period</Tooltip>.</p>
+                    </Card>
+                    <Card id="aegir" title="Ægir 👤" description='"Beneath the waves, my feast awaits the brave."' imagePlaceholder="Ægir Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Overflowing Goblet</h4>
+                        <p className="mb-3"><em>Description:</em> Ægir, the sea-giant and brewer of the gods, is famed for his endless banquets in the halls beneath the ocean. His generosity flows like the tide — vast, unending, and powerful.</p>
+                        <p><strong>Effect:</strong> Your maximum hand size is 5 instead of 3, reflecting Ægir’s boundless hospitality.</p>
+                    </Card>
+                    <Card id="ran" title="Rán 👤" description='"Into my net all must eventually fall."' imagePlaceholder="Rán Character Card">
+                        <h4 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-indigo-300' : 'text-indigo-600'}`}>Drowning Net</h4>
+                        <p className="mb-3"><em>Description:</em> Rán, the deep-sea goddess and wife of Ægir, is feared and revered for her golden net — a snare from which no sailor escapes. In its shimmering threads, fate is sealed beneath the black waters.</p>
+                        <p><strong>Effect:</strong> Discard 1 <Tooltip term="DEFENCE">Defence</Tooltip> card to ensnare a chosen player in the Golden Net.
+                            <br/>At the start of their Draw Phase, they must roll a <Tooltip term="Rune Check">Rune Check</Tooltip>.
+                            <br/>If the result is ᚺ, they cannot draw 2 cards this turn.
+                        </p>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- Cards Pedia Page (Section VII) ---
+const CardsPediaPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+    const italicClass = theme === 'dark' ? 'italic text-gray-400' : 'italic text-gray-600';
+
+    const sections = [
+        { id: 'pedia-intro', title: 'Introduction', icon: Book },
+        { id: 'basic-variants', title: 'Basic Card Variants', icon: ScrollText },
+        { id: 'event-cards', title: 'Event Cards', icon: Zap },
+        { id: 'equipment-cards', title: 'Equipment Cards', icon: Shield },
+        { id: 'item-cards', title: 'Item Cards', icon: Gem },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="cards-pedia" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                <SectionHeader id="pedia-intro" title="Cards Pedia" subtitle="Unleash Their Power!" icon={Layers} />
+                <p className="mb-6 text-lg">Beyond basic actions, "Fate and Ragnarök" features powerful unique cards. All cards define their applications clearly on the card itself.</p>
+
+                <SubSectionHeader id="basic-variants" title="Basic Card Variants:" icon={ScrollText} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong className={strongClass}><Tooltip term="ATTACK">ATTACK</Tooltip> and see (<Tooltip term="Kenaz">Kenaz</Tooltip>) ⚔️👁️:</strong> Target loses 1 <Tooltip term="HP">HP</Tooltip>. If successful (not blocked), you see 1 random card from their hand.</li>
+                    <li><strong className={strongClass}><Tooltip term="DEFENCE">DEFENCE</Tooltip> and see (<Tooltip term="Kenaz">Kenaz</Tooltip>) 🛡️👁️:</strong> Block 1 damage. You then see 1 random card from the attacker's hand.</li>
+                    <li><strong className={strongClass}><Tooltip term="DEFENCE">DEFENCE</Tooltip> and hit (<Tooltip term="Tiwaz">Tiwaz</Tooltip>) 🛡️💥:</strong> Block 1 damage. The attacker immediately loses 1 <Tooltip term="HP">HP</Tooltip> (a blockable "hit back"). No extra <Tooltip term="ATTACK">ATTACK</Tooltip> card needed.</li>
+                    <li><strong className={strongClass}><Tooltip term="HEAL">HEAL</Tooltip> and revive (<Tooltip term="Dagaz">Dagaz</Tooltip>) 💚✨:</strong> Restore 1 <Tooltip term="HP">HP</Tooltip>. If used when a player's <Tooltip term="HP">HP</Tooltip> = 0, they revive with 1 <Tooltip term="HP">HP</Tooltip> and draw 3 cards.</li>
+                </ul>
+
+                <SubSectionHeader id="event-cards" title="Event Cards (Icon: ⚡):" icon={Zap} />
+                <p className="mb-6 text-lg">These cards create unique situations, often affecting multiple players or resources.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                    <Card title="Eye for Wisdom" imagePlaceholder="Eye for Wisdom Card">
+                        <p className="mb-3 text-lg">Look at a target's hand. Optionally, discard 1 of your cards to force them to discard 1 of their choice.</p>
+                        <p><em className={italicClass}>Whisper: "He gave up one eye, but saw farther than any could dream."</em></p>
+                    </Card>
+                    <Card title="The Hair-Prank" imagePlaceholder="Hair-Prank Card">
+                        <p className="mb-3 text-lg">Take 1 random card from a target. Optionally, draw 2 cards, keep 1, and give the other to the target.</p>
+                        <p><em className={italicClass}>Whisper: "He took her hair, but gave back gold, ships, and thunder."</em></p>
+                    </Card>
+                    <Card title="Vanir-Aesir War" imagePlaceholder="Vanir-Aesir War Card">
+                        <p className="mb-3 text-lg">All players in your current Distance Range (see Standard Setup: <Tooltip term="Observation Period">Game Periods</Tooltip>) must discard 1 <Tooltip term="DEFENCE">DEFENCE</Tooltip> card or lose 1 <Tooltip term="HP">HP</Tooltip>. This effect also applies to you.</p>
+                        <p><em className={italicClass}>Whisper: "War raged between gods until peace was forged in blood."</em></p>
+                    </Card>
+                    <Card title="Firstborn's Fall" imagePlaceholder="Firstborn's Fall Card">
+                        <p className="mb-3 text-lg">All players in your current Distance Range (see Standard Setup: <Tooltip term="Observation Period">Game Periods</Tooltip>) must discard 1 <Tooltip term="ATTACK">ATTACK</Tooltip> card or lose 1 <Tooltip term="HP">HP</Tooltip>. This effect also applies to you.</p>
+                        <p><em className={italicClass}>Whisper: "From the Mead of Poetry, all minds were kindled."</em></p>
+                    </Card>
+                    <Card title="Broken Pact" imagePlaceholder="Broken Pact Card">
+                        <p className="mb-3 text-lg">Cancel 1 <Tooltip term="EVENT cards">EVENT</Tooltip> card’s effect that affects you.</p>
+                        <p><em className={italicClass}>Whisper: "No wall stands forever when riddles are spoken."</em></p>
+                    </Card>
+                    <Card title="Mead of Poetry" imagePlaceholder="Mead of Poetry Card">
+                        <p className="mb-3 text-lg">Swap up to 3 hand cards with a target. Optionally, give 1 of the cards you received to any player.</p>
+                        <p><em className={italicClass}>Whisper: "From the Mead of Poetry, all minds were kindled."</em></p>
+                    </Card>
+                    <Card title="Serpent’s Toxin" imagePlaceholder="Serpent’s Toxin Card">
+                        <p className="mb-3 text-lg">Roll the <Tooltip term="Rune Dice">Rune Dice</Tooltip> twice. If both are ᚺ, you lose 2 <Tooltip term="HP">HP</Tooltip> and discard this card. Otherwise, pass this card to another player.</p>
+                        <p><em className={italicClass}>Whisper: "The serpent's bite hurts deeper than blades." — Poetic Edda</em></p>
+                    </Card>
+                    <Card title="Drip of Pain" imagePlaceholder="Drip of Pain Card">
+                        <p className="mb-3 text-lg">Target is poisoned for 2 turns. Each turn they are poisoned, they roll the <Tooltip term="Rune Dice">Rune Dice</Tooltip>; if ᚺ, they lose 1 <Tooltip term="HP">HP</Tooltip>.</p>
+                        <p><em className={italicClass}>Whisper: "The venom falls, drop by drop, onto his chained body."</em></p>
+                    </Card>
+                </div>
+
+                <SubSectionHeader id="equipment-cards" title="One-Time Use Equipment Cards (Icon: 🛡️⚔️):" icon={Shield} />
+                <p className="mb-6 text-lg">Powerful artifacts that are discarded after use.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                    <Card title="Mjölnir, the Crusher" imagePlaceholder="Mjölnir Card" lore={`"The hammer Mjölnir always returns to the owner's hand." — Prose Edda`}>
+                        <p className="mb-3 text-lg">When attacking, roll <Tooltip term="Rune Dice">Rune Dice</Tooltip>: ᛋ or ᛃ = double damage; ᚺ = no damage. Target needs 2 <Tooltip term="DEFENCE">DEFENCE</Tooltip> cards to block. Discard after use.</p>
+                    </Card>
+                    <Card title="Gungnir, Spear of the Allfather" imagePlaceholder="Gungnir Card" lore='"Gungnir never misses and always strikes true." — Prose Edda'>
+                        <p className="mb-3 text-lg">Your <Tooltip term="ATTACK">ATTACK</Tooltip> may target anyone, regardless of distance. Discard after use.</p>
+                    </Card>
+                    <Card title="Laevateinn, Flame of the Trickster" imagePlaceholder="Laevateinn Card" lore='"There lies Laevateinn, forged in trickster’s flame." — Poetic Edda'>
+                        <p className="mb-3 text-lg">On successful damage, steal 1 random card from the target. Discard after use.</p>
+                    </Card>
+                    <Card title="Surtalogi, the Worldflame" imagePlaceholder="Surtalogi Card" lore='"They shall come from the south, with flames brighter than the sun." — Poetic Edda'>
+                        <p className="mb-3 text-lg">Your <Tooltip term="ATTACK">ATTACK</Tooltip> causes Burn: the target must discard 1 card. Discard after use.</p>
+                    </Card>
+                    <Card title="Hofund, Guardian’s Edge" imagePlaceholder="Hofund Card" lore='"If your ATTACK is blocked, discard this card to immediately attack again." — Prose Edda'>
+                        <p className="mb-3 text-lg">If your <Tooltip term="ATTACK">ATTACK</Tooltip> is blocked, discard this card to immediately attack again. Discard after use.</p>
+                    </Card>
+                </div>
+
+                <SubSectionHeader id="item-cards" title="One-Time Use Item Cards (Icon: 💎):" icon={Gem} />
+                <p className="mb-6 text-lg">Unique items with special effects, discarded after use.</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+                    <Card title="Brisingamen" imagePlaceholder="Brisingamen Card" lore='"Forged in fire, worn by beauty that moves gods to war."'>
+                        <p className="mb-3 text-lg">When attacked, discard this card PLUS 1 <Tooltip term="DEFENCE">DEFENCE</Tooltip> card to redirect the attack to another player.</p>
+                    </Card>
+                    <Card title="Draupnir" imagePlaceholder="Draupnir Card" lore='"From one came eight, a golden echo every ninth night."'>
+                        <p className="mb-3 text-lg">Copy and immediately use any card from the <Tooltip term="Discard Pile">Discard Pile</Tooltip>. Then discard this card.</p>
+                    </Card>
+                    <Card title="Wisdom Head" imagePlaceholder="Wisdom Head Card" lore='"Though severed from life, his wisdom still shapes the path unseen."'>
+                        <p className="mb-3 text-lg">Reroll any player’s <Tooltip term="Rune Check">Rune Check</Tooltip>, including yours. Discard after use.</p>
+                    </Card>
+                    <Card title="Mistletoe, Small but Deadly" imagePlaceholder="Mistletoe Card" lore='"Trickster guided the blind one’s hand to cast the branch, the light vanished." — Prose Edda'>
+                        <p className="mb-3 text-lg">Target loses 1 <Tooltip term="HP">HP</Tooltip>. Can only be used while your identity is hidden. Discard after use.</p>
+                    </Card>
+                    <Card title="Feather Cloak" imagePlaceholder="Feather Cloak Card" lore='"Feathers unfurl; the sky bends to her will."'>
+                        <p className="mb-3 text-lg">You transform for one full round (until your next turn begins). During this round, you cannot be <Tooltip term="ATTACK">ATTACK</Tooltip>, but you cannot <Tooltip term="ATTACK">ATTACK</Tooltip> either.</p>
+                    </Card>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Glossary & Quick Reference Page (Section VIII) ---
+const GlossaryPage = ({ setCurrentPage }) => {
+    const { theme } = useTheme();
+    const contentClass = theme === 'dark' ? 'text-gray-200' : 'text-gray-800';
+    const strongClass = theme === 'dark' ? 'font-bold text-white' : 'font-bold text-gray-900';
+    const italicClass = theme === 'dark' ? 'italic text-gray-400' : 'italic text-gray-600';
+    const tipClass = theme === 'dark' ? 'bg-emerald-900 border-emerald-500 text-emerald-100' : 'bg-emerald-100 border-emerald-500 text-emerald-800';
+
+    const sections = [
+        { id: 'glossary-intro', title: 'Introduction', icon: Book },
+        { id: 'game-flow', title: 'Game Flow Guideline', icon: ScrollText },
+        { id: 'key-terms', title: 'Key Terms', icon: Info },
+        { id: 'rune-results', title: 'Rune Dice Results', icon: Sparkles },
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row gap-6">
+            <PageNavigation sections={sections} currentPageId="glossary" setCurrentPage={setCurrentPage} />
+            <div className={`flex-grow p-6 md:p-10 rounded-xl shadow-2xl transition-colors duration-500
+                ${theme === 'dark' ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-300'} ${contentClass}`}>
+                <button
+                    onClick={() => setCurrentPage('landing')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-lg font-medium transition-all duration-300 mb-8
+                        ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' : 'bg-indigo-400 hover:bg-indigo-500 text-white shadow-md'}`}>
+                    <ArrowLeft className="w-5 h-5" /> Back to Home
+                </button>
+
+                <SectionHeader id="glossary-intro" title="Glossary & Quick Reference" icon={Book} />
+                <p className="mb-6 text-lg">Keep this page handy for quick checks during play!</p>
+
+                <SubSectionHeader id="game-flow" title="Game Flow Guideline (Cheat Sheet):" icon={ScrollText} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    <li><strong className={strongClass}>Rune Phase (🎲):</strong> Roll <Tooltip term="Rune Dice">Rune Dice</Tooltip> if needed.</li>
+                    <li><strong className={strongClass}>Draw Phase (➡️📜):</strong> Draw 2 cards.</li>
+                    <li><strong className={strongClass}>Action Phase (✨):</strong> Play up to 3 cards; <Tooltip term="ATTACK">ATTACK</Tooltip> limits apply (1 in <Tooltip term="Observation Period">Observation</Tooltip>, 2 in <Tooltip term="Revelation Period">Revelation</Tooltip>/<Tooltip term="Ragnarök Period">Ragnarök</Tooltip>). No two attacks on same target per round (before <Tooltip term="Ragnarök Period">Ragnarök</Tooltip>).</li>
+                    <li><strong className={strongClass}>Discard Phase (↩️):</strong> Keep up to 3 cards; discard surplus.</li>
+                </ul>
+
+                <SubSectionHeader id="key-terms" title="Key Terms:" icon={Info} />
+                <ul className="list-disc list-inside mb-6 space-y-2 text-lg">
+                    {Object.entries(glossaryTerms).map(([term, definition]) => (
+                        <li key={term}>
+                            <Tooltip term={term}>{term}</Tooltip> (Icon: {
+                                term === "HP" ? "❤️" :
+                                term === "Rune Check" ? "🎲" :
+                                term === "Draw Pile" ? "📚" :
+                                term === "Discard Pile" ? "🗑️" :
+                                term === "Fate Marks" ? "⭐" :
+                                term === "Bonus Card" ? "📜✨" :
+                                ""
+                            }): {definition}
+                        </li>
+                    ))}
+                </ul>
+
+                <SubSectionHeader id="rune-results" title="Rune Dice Results:" icon={Sparkles} />
+                <div className="overflow-x-auto my-6 rounded-lg shadow-md text-lg">
+                    <table className={`min-w-full ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'} rounded-lg`}>
+                        <thead>
+                            <tr className={`${theme === 'dark' ? 'bg-gray-600 text-gray-100' : 'bg-gray-300 text-gray-800'} uppercase text-sm md:text-base leading-normal`}>
+                                <th className="py-3 px-6 text-left rounded-tl-lg">Fate Rune Symbol</th>
+                                <th className="py-3 px-6 text-left">Indication</th>
+                                <th className="py-3 px-6 text-left rounded-tr-lg">Game Meaning</th>
+                            </tr>
+                        </thead>
+                        <tbody className={`${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'} text-sm md:text-base font-light`}>
+                            <tr className={`${theme === 'dark' ? 'border-b border-gray-600 hover:bg-gray-600' : 'border-b border-gray-300 hover:bg-gray-200'}`}>
+                                <td className="py-3 px-6 text-left whitespace-nowrap">ᛋ (<Tooltip term="Sowilo">Sowilo</Tooltip>)</td>
+                                <td className="py-3 px-6 text-left">Sun, Victory, Success</td>
+                                <td className="py-3 px-6 text-left">Positive Result</td>
+                            </tr>
+                            <tr className={`${theme === 'dark' ? 'border-b border-gray-600 hover:bg-gray-600' : 'border-b border-gray-300 hover:bg-gray-200'}`}>
+                                <td className="py-3 px-6 text-left whitespace-nowrap">ᛃ (<Tooltip term="Jera">Jera</Tooltip>)</td>
+                                <td className="py-3 px-6 text-left">Cycles, Harvest, Timing</td>
+                                <td className="py-3 px-6 text-left">Neutral Result</td>
+                            </tr>
+                            <tr className={`${theme === 'dark' ? 'hover:bg-gray-600' : 'hover:bg-gray-200'}`}>
+                                <td className="py-3 px-6 text-left whitespace-nowrap">ᚺ (<Tooltip term="Hagalaz">Hagalaz</Tooltip>)</td>
+                                <td className="py-3 px-6 text-left">Hailstorm, Disruption</td>
+                                <td className="py-3 px-6 text-left">Negative Result</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className={`p-4 rounded-md my-8 border-l-4 ${tipClass} text-lg`}>
+                    <p className="font-semibold">Beginner Tip:</p>
+                    <p>This game isn't about speed – it's about when you strike, when you wait, and who you believe.</p>
+                </div>
+                <p className={`italic text-lg mt-6 text-center ${italicClass}`}>“Fate is not written. It is fought for.”</p>
+            </div>
+        </div>
+    );
+};
+
+
+// --- Main App Component ---
+const App = () => {
+    const [currentPage, setCurrentPage] = useState('landing');
+    const { theme, toggleTheme } = useTheme();
+
+    const renderPage = () => {
+        switch (currentPage) {
+            case 'landing':
+                return <LandingPage setCurrentPage={setCurrentPage} />;
+            case 'tutorial':
+                return <TutorialPage setCurrentPage={setCurrentPage} />;
+            case 'standard':
+                return <StandardGamePage setCurrentPage={setCurrentPage} />;
+            case 'ultra':
+                return <UltraSetupPage setCurrentPage={setCurrentPage} />;
+            case 'character-cards':
+                return <CharacterCardsPage setCurrentPage={setCurrentPage} />;
+            case 'cards-pedia':
+                return <CardsPediaPage setCurrentPage={setCurrentPage} />;
+            case 'glossary':
+                return <GlossaryPage setCurrentPage={setCurrentPage} />;
+            default:
+                return <LandingPage setCurrentPage={setCurrentPage} />;
+        }
+    };
+
+    return (
+        <div className={`min-h-screen flex flex-col ${theme === 'dark' ? 'bg-gray-900 text-gray-200' : 'bg-gray-50 text-gray-900'} font-inter transition-colors duration-500`}>
+            {/* Header Section */}
+            <header className={`p-4 shadow-lg rounded-b-lg mb-4
+                ${theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-indigo-700 text-white'}`}>
+                <div className="container mx-auto flex flex-col md:flex-row justify-between items-center">
+                    <h1 className="text-4xl font-extrabold tracking-tight text-center md:text-left mb-2 md:mb-0">
+                        Fate and Ragnarök
+                    </h1>
+                    <div className="flex items-center space-x-4">
+                        <p className="text-lg opacity-90">Player Manual</p>
+                        <button
+                            onClick={toggleTheme}
+                            className={`p-2 rounded-full transition-all duration-300
+                                ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-yellow-400' : 'bg-indigo-600 hover:bg-indigo-500 text-yellow-300'}`}
+                            aria-label="Toggle theme"
+                        >
+                            {theme === 'dark' ? <Sun className="w-6 h-6" /> : <Moon className="w-6 h-6" />}
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Content Area */}
+            <main className="container mx-auto px-4 py-6 flex-grow">
+                {renderPage()}
+            </main>
+
+            {/* Footer Section */}
+            <footer className={`p-4 text-center mt-6 rounded-t-lg shadow-lg
+                ${theme === 'dark' ? 'bg-gray-800 text-gray-400' : 'bg-indigo-700 text-indigo-200'}`}>
+                <p>&copy; 2025 Fate and Ragnarök. All rights reserved.</p>
+            </footer>
+        </div>
+    );
+};
+
+// --- Custom Styles for Scrollbar (outside React components) ---
+// These styles will be applied globally to the HTML document.
+const styleSheet = document.createElement('style');
+styleSheet.type = 'text/css';
+styleSheet.innerText = `
+    html.dark ::-webkit-scrollbar {
+        width: 8px;
+    }
+    html.dark ::-webkit-scrollbar-track {
+        background: #1f2937; /* Darker track for dark theme */
+        border-radius: 10px;
+    }
+    html.dark ::-webkit-scrollbar-thumb {
+        background: #4a5568; /* Dark grey thumb */
+        border-radius: 10px;
+    }
+    html.dark ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; /* Lighter grey on hover */
+    }
+    html.light ::-webkit-scrollbar {
+        width: 8px;
+    }
+    html.light ::-webkit-scrollbar-track {
+        background: #e5e7eb; /* Light track for light theme */
+        border-radius: 10px;
+    }
+    html.light ::-webkit-scrollbar-thumb {
+        background: #9ca3af; /* Medium grey thumb */
+        border-radius: 10px;
+    }
+    html.light ::-webkit-scrollbar-thumb:hover {
+        background: #6b7280; /* Darker grey on hover */
+    }
+
+    @keyframes fadeInScale {
+        from {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: scale(1);
+        }
+    }
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    .animate-gradient {
+        background-size: 200% 200%;
+        animation: gradientShift 5s ease infinite;
+    }
+`;
+document.head.appendChild(styleSheet);
+
+
+// Export the main App component wrapped with ThemeProvider
+export default function ProvidedApp() {
+    return (
+        <ThemeProvider>
+            <App />
+        </ThemeProvider>
+    );
+}
